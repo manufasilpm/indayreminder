@@ -2,7 +2,6 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:indayreminder/main.dart';
 import 'package:indayreminder/models/reminder.dart';
 import 'package:indayreminder/pages/add_screen.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -22,13 +21,6 @@ class _ReminderHomePageState extends State<ReminderHomePage> {
     super.initState();
     reminderBox = Hive.box<Reminder>('reminders');
     _initAndSchedule();
-  }
-
-  DateTime _findNextTime(Reminder reminder) {
-    final now = DateTime.now();
-    DateTime start = DateTime(now.year, now.month, now.day, reminder.fromTime.hour, reminder.fromTime.minute);
-    if (start.isBefore(now)) start = start.add(const Duration(days: 1));
-    return start;
   }
 
   Future<void> _initAndSchedule() async {
@@ -51,17 +43,14 @@ class _ReminderHomePageState extends State<ReminderHomePage> {
 
   Future<void> _scheduleReminder(Reminder reminder) async {
     final now = DateTime.now();
-
     DateTime start = DateTime(now.year, now.month, now.day, reminder.fromTime.hour, reminder.fromTime.minute);
     DateTime end = DateTime(now.year, now.month, now.day, reminder.toTime.hour, reminder.toTime.minute);
-
     if (end.isBefore(start)) {
       end = end.add(const Duration(days: 1));
     }
 
     final totalMinutes = end.difference(start).inMinutes;
     if (totalMinutes <= 0) return;
-
     final intervalMinutes = (totalMinutes / reminder.reminderCount).floor().clamp(1, totalMinutes);
     final interval = Duration(minutes: intervalMinutes);
 
@@ -69,7 +58,6 @@ class _ReminderHomePageState extends State<ReminderHomePage> {
     for (DateTime t = start; t.isBefore(end) || t.isAtSameMomentAs(end); t = t.add(interval)) {
       final weekdayIndex = t.weekday - 1;
       if (!reminder.days[weekdayIndex]) continue;
-
       final tzTime = tz.TZDateTime.from(t, tz.local);
       final androidDetails = AndroidNotificationDetails(
         'reminder_channel',
@@ -80,7 +68,6 @@ class _ReminderHomePageState extends State<ReminderHomePage> {
         playSound: reminder.sound,
         vibrationPattern: reminder.vibration ? Int64List.fromList([0, 500, 1000, 500]) : null,
       );
-
       await notifications.zonedSchedule(
         reminder.key.hashCode + idCounter,
         'Reminder',
@@ -114,15 +101,11 @@ class _ReminderHomePageState extends State<ReminderHomePage> {
               itemCount: box.length,
               itemBuilder: (context, index) {
                 final reminder = box.getAt(index)!;
-                DateTime nextTime = _findNextTime(reminder);
                 return Card(
                   margin: const EdgeInsets.all(8),
                   child: ListTile(
                     title: Text(reminder.message),
-                    subtitle: Text(
-                      "Next: ${TimeOfDay.fromDateTime(nextTime).format(context)} "
-                      "| ${reminder.fromTime.format(context)} → ${reminder.toTime.format(context)}",
-                    ),
+                    subtitle: Text("${reminder.fromTime.format(context)} → ${reminder.toTime.format(context)}"),
                     onTap: () => _openAddPage(editReminder: reminder),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete),
