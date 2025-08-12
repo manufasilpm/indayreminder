@@ -1,7 +1,11 @@
 // main.dart
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:indayreminder/models/reminder.dart';
+import 'package:indayreminder/pages/home_screen.dart';
+import 'package:indayreminder/services/reminder_adapter.dart';
+import 'package:indayreminder/utils/globals.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:hive_flutter/hive_flutter.dart';
@@ -20,66 +24,12 @@ Future<void> main() async {
   tz.initializeTimeZones();
   tz.setLocalLocation(tz.getLocation('Asia/Kolkata'));
   
+  tz.setLocalLocation(tz.getLocation('Asia/Kolkata'));
+  
   await Hive.initFlutter();
   Hive.registerAdapter(ReminderAdapter());
   await Hive.openBox<Reminder>('reminders');
   runApp(MyApp());
-}
-
-
-
-/// Reminder Model
-class Reminder extends HiveObject {
-  String message;
-  TimeOfDay fromTime;
-  TimeOfDay toTime;
-  int reminderCount;
-  List<bool> days; // Mon=0 .. Sun=6
-  bool vibration;
-  bool sound;
-
-  Reminder({
-    required this.message,
-    required this.fromTime,
-    required this.toTime,
-    required this.reminderCount,
-    required this.days,
-    required this.vibration,
-    required this.sound,
-  });
-}
-
-/// Hive Adapter
-class ReminderAdapter extends TypeAdapter<Reminder> {
-  @override
-  final int typeId = 0;
-
-  @override
-  Reminder read(BinaryReader reader) {
-    return Reminder(
-      message: reader.readString(),
-      fromTime: TimeOfDay(hour: reader.readInt(), minute: reader.readInt()),
-      toTime: TimeOfDay(hour: reader.readInt(), minute: reader.readInt()),
-      reminderCount: reader.readInt(),
-      days: List<bool>.from(reader.readList()),
-      vibration: reader.readBool(),
-      sound: reader.readBool(),
-    );
-  }
-
-  @override
-  void write(BinaryWriter writer, Reminder obj) {
-    writer
-      ..writeString(obj.message)
-      ..writeInt(obj.fromTime.hour)
-      ..writeInt(obj.fromTime.minute)
-      ..writeInt(obj.toTime.hour)
-      ..writeInt(obj.toTime.minute)
-      ..writeInt(obj.reminderCount)
-      ..writeList(obj.days)
-      ..writeBool(obj.vibration)
-      ..writeBool(obj.sound);
-  }
 }
 
 /// Main App
