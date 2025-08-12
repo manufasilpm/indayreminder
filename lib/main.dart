@@ -1,12 +1,16 @@
 // main.dart
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:indayreminder/models/reminder.dart';
+import 'package:indayreminder/pages/home_screen.dart';
+import 'package:indayreminder/services/reminder_adapter.dart';
+import 'package:indayreminder/utils/globals.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:hive/hive.dart';
-
+import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter/foundation.dart';
 
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -14,79 +18,18 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  const AndroidInitializationSettings initializationSettingsAndroid =
-      AndroidInitializationSettings('@mipmap/ic_launcher');
-
-  const InitializationSettings initializationSettings =
-      InitializationSettings(android: initializationSettingsAndroid);
-
+  const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const InitializationSettings initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
   await flutterLocalNotificationsPlugin.initialize(initializationSettings);
-
-
   tz.initializeTimeZones();
-
+  tz.setLocalLocation(tz.getLocation('Asia/Kolkata'));
+  
+  tz.setLocalLocation(tz.getLocation('Asia/Kolkata'));
+  
   await Hive.initFlutter();
   Hive.registerAdapter(ReminderAdapter());
   await Hive.openBox<Reminder>('reminders');
-
   runApp(MyApp());
-}
-
-
-
-/// Reminder Model
-class Reminder extends HiveObject {
-  String message;
-  TimeOfDay fromTime;
-  TimeOfDay toTime;
-  int reminderCount;
-  List<bool> days; // Mon=0 .. Sun=6
-  bool vibration;
-  bool sound;
-
-  Reminder({
-    required this.message,
-    required this.fromTime,
-    required this.toTime,
-    required this.reminderCount,
-    required this.days,
-    required this.vibration,
-    required this.sound,
-  });
-}
-
-/// Hive Adapter
-class ReminderAdapter extends TypeAdapter<Reminder> {
-  @override
-  final int typeId = 0;
-
-  @override
-  Reminder read(BinaryReader reader) {
-    return Reminder(
-      message: reader.readString(),
-      fromTime: TimeOfDay(hour: reader.readInt(), minute: reader.readInt()),
-      toTime: TimeOfDay(hour: reader.readInt(), minute: reader.readInt()),
-      reminderCount: reader.readInt(),
-      days: List<bool>.from(reader.readList()),
-      vibration: reader.readBool(),
-      sound: reader.readBool(),
-    );
-  }
-
-  @override
-  void write(BinaryWriter writer, Reminder obj) {
-    writer
-      ..writeString(obj.message)
-      ..writeInt(obj.fromTime.hour)
-      ..writeInt(obj.fromTime.minute)
-      ..writeInt(obj.toTime.hour)
-      ..writeInt(obj.toTime.minute)
-      ..writeInt(obj.reminderCount)
-      ..writeList(obj.days)
-      ..writeBool(obj.vibration)
-      ..writeBool(obj.sound);
-  }
 }
 
 /// Main App
@@ -123,7 +66,53 @@ class _ReminderHomePageState extends State<ReminderHomePage> {
   void initState() {
     super.initState();
     reminderBox = Hive.box<Reminder>('reminders');
-    _initAndSchedule();
+    _checkAndRequestPermissions().then((_) => _initAndSchedule());
+  }
+
+  Future<void> _checkAndRequestPermissions() async {
+    // Request notification permission (Android 13+)
+    if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android)) {
+      final notificationStatus = await Permission.notification.request();
+      if (notificationStatus.isPermanentlyDenied) {
+        _showPermissionDialog(
+          "Notification Permission Required",
+          "Please enable notifications in app settings",
+        );
+      }
+      
+      // Check exact alarm permission
+      if (!await Permission.scheduleExactAlarm.isGranted) {
+        _showPermissionDialog(
+          "Exact Alarm Permission Required",
+          "Please enable 'Schedule Exact Alarms' in app settings",
+        );
+      }
+    }
+  }
+
+  void _showPermissionDialog(String title, String message) {
+    if (!mounted) return;
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () {
+              openAppSettings();
+              Navigator.pop(context);
+            },
+            child: const Text("Open Settings"),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _initAndSchedule() async {
@@ -173,8 +162,7 @@ class _ReminderHomePageState extends State<ReminderHomePage> {
         importance: Importance.high,
         priority: Priority.high,
         playSound: reminder.sound,
-        sound: reminder.sound ? const RawResourceAndroidNotificationSound('alert') : null,
-        vibrationPattern: reminder.vibration ? Int64List.fromList([0, 500, 1000, 500]) : null,
+        vibrationPattern: reminder.vibration ? Int64List.fromList([0, 500, 1000, 500]) :Int64List(0),
       );
 
       await notifications.zonedSchedule(
@@ -183,7 +171,7 @@ class _ReminderHomePageState extends State<ReminderHomePage> {
         reminder.message,
         tzTime,
         NotificationDetails(android: androidDetails),
-        androidAllowWhileIdle: true,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         matchDateTimeComponents: DateTimeComponents.time,
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
       );
